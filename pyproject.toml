@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-router"
+version = "0.1.0"
+description = "Shared API key vault and fault-tolerant requests to Gemini and OpenAI: key rotation, model chains, quota accounting via gemini-budget and openai-budget."
+requires-python = ">=3.9"
+dependencies = [
+    "gemini-budget>=0.3",
+    "openai-budget>=0.2",
+]
+
+[project.optional-dependencies]
+gemini = ["google-genai>=1.30"]
+openai = ["openai>=1.66"]
+all = ["google-genai>=1.30", "openai>=1.66"]
+
+[project.scripts]
+ai-router = "ai_router.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["ai_router*"]
