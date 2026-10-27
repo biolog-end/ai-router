@@ -84,6 +84,7 @@ class _Run:
     timeout_s: float = DEFAULT_TIMEOUT_S
     accept: Any = None
     streaming: bool = False
+    pin_keys: dict = None
 
 
 # --------------------------------------------------------------------------
@@ -186,10 +187,11 @@ def _blocker_text(blocker):
 def _candidates(model, provider, run, tracked):
     """(usable entries in order, blocked [(entry, blocker)])."""
     entries = keys.entries(provider)
-    if run.key_id:
-        pinned = [entry for entry in entries if entry['id'] == run.key_id]
+    key_id = (run.pin_keys or {}).get(model) or run.key_id
+    if key_id:
+        pinned = [entry for entry in entries if entry['id'] == key_id]
         if not pinned:
-            raise NoKeysError(f'Ключ {run.key_id} не найден в хранилище ai_router.', model=model, provider=provider)
+            raise NoKeysError(f'Ключ {key_id} не найден в хранилище ai_router.', model=model, provider=provider)
         return pinned, []
     enabled = [entry for entry in entries if entry.get('enabled', True)]
     if not entries:
@@ -296,7 +298,7 @@ def _run_model(model, provider, position, total, perform, run, notes, attempts):
                     elif kind == 'usage':
                         usage_event = event
                     else:
-                        emitted |= kind == 'delta' and bool(event.get('text'))
+                        emitted |= kind == 'delta' and bool(event.get('text') or event.get('audio'))
                         yield event
                 if final is None:
                     final = {'response': None, 'parsed': None}

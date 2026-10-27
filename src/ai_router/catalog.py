@@ -12,6 +12,8 @@ from ._storage import file_lock, read_json, state_dir, write_json
 log = logging.getLogger('ai_router')
 
 DEFAULT_CHAIN = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gpt-5.4', 'gpt-5.4-mini']
+DEFAULT_TTS_CHAIN = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts', 'gemini-3.1-flash-tts-preview',
+                     'gemini-2.5-flash-preview-tts']
 LIVE_TTL_S = 600
 
 _live_lock = threading.Lock()
@@ -70,22 +72,39 @@ def _config_path():
     return state_dir() / 'config.json'
 
 
-def default_chain():
-    """The chain used when a call names neither a model nor a chain. Editable for everyone."""
+def _read_chain(name, fallback):
     with file_lock(_config_path()):
-        chain = (read_json(_config_path(), {}) or {}).get('default_chain')
-    return list(chain) if isinstance(chain, list) and chain else list(DEFAULT_CHAIN)
+        chain = (read_json(_config_path(), {}) or {}).get(name)
+    return list(chain) if isinstance(chain, list) and chain else list(fallback)
 
 
-def set_default_chain(chain):
+def _write_chain(name, chain):
     chain = [canonical(model) for model in chain if canonical(model)]
     if not chain:
         raise ValueError('Цепочка моделей пуста.')
     with file_lock(_config_path()):
         config = read_json(_config_path(), {}) or {}
-        config['default_chain'] = chain
+        config[name] = chain
         write_json(_config_path(), config)
     return chain
+
+
+def default_chain():
+    """The chain used when a call passes chain=True. Editable for everyone."""
+    return _read_chain('default_chain', DEFAULT_CHAIN)
+
+
+def set_default_chain(chain):
+    return _write_chain('default_chain', chain)
+
+
+def default_tts_chain():
+    """The chain of speak(chain=True): TTS models from the best to the oldest."""
+    return _read_chain('default_tts_chain', DEFAULT_TTS_CHAIN)
+
+
+def set_default_tts_chain(chain):
+    return _write_chain('default_tts_chain', chain)
 
 
 def live_models(provider, client, force=False):
