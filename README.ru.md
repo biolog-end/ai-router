@@ -11,7 +11,12 @@
 
 ## Установка
 
+`gemini-budget` и `openai-budget` обязательны и на PyPI их нет, поэтому сначала ставятся
+они, именно в таком порядке:
+
 ```bat
+pip install git+https://github.com/biolog-end/gemini-budget.git
+pip install git+https://github.com/biolog-end/openai-budget.git
 pip install git+https://github.com/biolog-end/ai-router.git
 pip install google-genai openai        :: SDK, которые дёргает ai_router
 ```

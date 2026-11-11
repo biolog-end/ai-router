@@ -10,7 +10,12 @@ user shares the same vault, counters and pauses.
 
 ## Install
 
+`gemini-budget` and `openai-budget` are required and are not on PyPI, so install them
+first, in this order:
+
 ```bat
+pip install git+https://github.com/biolog-end/gemini-budget.git
+pip install git+https://github.com/biolog-end/openai-budget.git
 pip install git+https://github.com/biolog-end/ai-router.git
 pip install google-genai openai        :: the SDKs ai_router drives
 ```
