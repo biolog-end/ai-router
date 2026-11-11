@@ -13,7 +13,7 @@ from typing import Any
 import gemini_budget as gb
 import openai_budget as ob
 
-from . import catalog, keys, request as rq, state
+from . import catalog, keys, live, request as rq, state, voices
 from .errors import (NEXT_KEY, RETRY_SAME_KEY, AllFailedError, Attempt, BudgetError, EmptyResponseError,
                      ERROR_CLASSES, KIND_LABELS, KeysBusyError, NoKeysError, RequestError, RouterError,
                      SafetyError, StoppedError, classify, format_wait)
@@ -532,16 +532,42 @@ def _prepare(prompt, messages, params):
     return neutral, options, run
 
 
+def _with_audio(result, options):
+    """SpeechResult when a Live model answered with audio=True; a note when another model answered."""
+    if not (options.audio or options.voice):
+        return result
+    if not live.is_live_model(result.model):
+        result.notes.append('Звук (audio/voice) есть только у Live-моделей — ответ без звука.')
+        return result
+    if not options.audio:
+        return result
+    from .tts import _speech_result, wav
+    voice = voices.canonical(options.voice) if options.voice and voices.is_prebuilt(options.voice) else None
+    return _speech_result(result, wav(result.data or b'', live.SAMPLE_RATE), 'wav', live.SAMPLE_RATE,
+                          {'': voice} if voice else {})
+
+
+def _finish_audio(events, options):
+    for event in events:
+        if event['type'] == 'done':
+            event = {'type': 'done', 'result': _with_audio(event['result'], options)}
+        yield event
+
+
 def generate(prompt=None, *, model=None, chain=None, messages=None, on_event=None, **params):
     """One text (or JSON) answer from Gemini or OpenAI, built from a neutral request.
 
-    See README for every parameter; unsupported ones are dropped and listed in result.notes.
+    Live models (gemini-3.8-live, …) answer here too; audio=True (and voice=) on them returns
+    a SpeechResult with the spoken answer. See README for every parameter; unsupported ones
+    are dropped and listed in result.notes.
     """
     neutral, options, run = _prepare(prompt, messages, params)
     notes = []
 
     def perform(client, ctx):
-        if ctx.provider == 'openai':
+        if live.is_live_model(ctx.model):
+            yield from live.perform(client, ctx, neutral, options, notes, run, streaming=False)
+        elif ctx.provider == 'openai':
             method, kwargs = rq.openai_request(ctx.model, neutral, options, notes)
             response = getattr(client.responses, method)(**kwargs)
             yield {'type': '_final', 'response': response, 'parsed': rq.parse_openai(response, ctx.model, options, method)}
@@ -549,12 +575,13 @@ def generate(prompt=None, *, model=None, chain=None, messages=None, on_event=Non
             response = client.models.generate_content(**rq.gemini_request(ctx.model, neutral, options, notes))
             yield {'type': '_final', 'response': response, 'parsed': rq.parse_gemini(response, ctx.model, options)}
 
-    return _drive(_execute(_models(model, chain), perform, run, notes), on_event)
+    return _with_audio(_drive(_execute(_models(model, chain), perform, run, notes), on_event), options)
 
 
 def stream(prompt=None, *, model=None, chain=None, messages=None, on_event=None, **params):
     """Streaming generate(): yields {'type': 'delta', 'text'}, progress events and a final
     {'type': 'done', 'result': Result}. Keys and models switch only before the first delta.
+    A Live model with audio=True also yields {'type': 'delta', 'audio': PCM, 'sample_rate'}.
     """
     neutral, options, run = _prepare(prompt, messages, params)
     if options.json_schema is not None:
@@ -563,6 +590,9 @@ def stream(prompt=None, *, model=None, chain=None, messages=None, on_event=None,
     notes = []
 
     def perform(client, ctx):
+        if live.is_live_model(ctx.model):
+            yield from live.perform(client, ctx, neutral, options, notes, run, streaming=True)
+            return
         if ctx.provider == 'openai':
             _, kwargs = rq.openai_request(ctx.model, neutral, options, notes)
             with client.responses.stream(**kwargs) as events:
@@ -594,4 +624,4 @@ def stream(prompt=None, *, model=None, chain=None, messages=None, on_event=None,
             'text': joined, 'finish_reason': finish, 'truncated': finish == 'MAX_TOKENS',
             'usage': rq._gemini_usage(usage)}}
 
-    return _stream(_execute(_models(model, chain), perform, run, notes), on_event)
+    return _finish_audio(_stream(_execute(_models(model, chain), perform, run, notes), on_event), options)

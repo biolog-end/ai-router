@@ -50,6 +50,8 @@ class Options:
     image_detail: str = 'auto'
     timeout_s: float = None
     allow_paid: bool = False
+    audio: bool = False
+    voice: str = None
     gemini: dict = field(default_factory=dict)
     openai: dict = field(default_factory=dict)
 

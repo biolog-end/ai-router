@@ -170,6 +170,12 @@ def _network_failure(exc):
 # Gemini (google.genai.errors.APIError — not a GoogleAPIError subclass)
 # --------------------------------------------------------------------------
 
+# Websocket close codes of the Live API → the HTTP status with the same meaning.
+# 1011 is 429 when its reason mentions the quota.
+LIVE_CLOSE_CODES = {1000: 503, 1001: 503, 1006: 503, 1007: 400, 1008: 404, 1011: 503, 1012: 503, 1013: 503,
+                    1014: 503}
+
+
 def _is_genai_error(exc):
     try:
         from google.genai import errors as genai_errors
@@ -311,10 +317,18 @@ def _classify_gemini(exc, model, now=None):
     code = getattr(exc, 'code', None)
     status = getattr(exc, 'status', None)
     raw = getattr(exc, 'message', None) or str(exc)
+    live = code in LIVE_CLOSE_CODES
+    if live:
+        # The Live API closes the websocket instead of answering with an HTTP status.
+        raw = f'Live API {code}: {exc.details if isinstance(exc.details, str) else raw}'
+        code = 429 if code == 1011 and 'quota' in raw.lower() else LIVE_CLOSE_CODES[code]
     items = gemini_error_items(exc)
     reasons = {str(item.get('reason') or '') for item in items}
     if code == 429:
         report = quota_report(exc)
+        if live and report['scope'] == 'unknown':
+            # Live models have no daily quota on the free tier, only TPM.
+            report['scope'] = 'minute'
         kind, until, reason = _gemini_quota(exc, report, now)
         # Google may name an internal alias; the requested model is what gets paused.
         return Failure(kind, f'Gemini 429: {reason}.', code, model, until, report, raw)

@@ -122,6 +122,33 @@ ai.default_model("openai")                  # provider defaults for the UI
 ai.light_model("gemini")                    # a cheap model of the same provider (memory, summaries)
 ```
 
+## Live models
+
+`gemini-3.8-live`, `gemini-3.1-flash-live-preview` and `gemini-2.5-flash-native-audio-*`
+work through the Live API (a websocket session) but answer `generate()`/`stream()` like any
+other model, in a chain too. The free tier counts only TPM for them (65K for 3.8), with no
+RPM/RPD limit.
+
+```python
+result = ai.generate("Привет!", model="gemini-3.8-live")
+for event in ai.stream("Расскажи сказку", model="gemini-3.8-live"):
+    ...
+speech = ai.generate("Привет!", model="gemini-3.8-live", audio=True, voice="Kore")
+speech.text, speech.save("answer.wav")                   # SpeechResult: the text plus its audio
+ai.is_live_model("gemini-3.8-live")                       # True
+```
+
+- A Live model always speaks; the text is the transcription of that speech and arrives at
+  speaking pace (a 300-word answer takes about 100 s). Code and JSON come as text without speech.
+- Every call is one session: the whole conversation (images included) goes in as one turn.
+- `system`, `temperature`, `top_p`, `top_k`, `seed`, `voice` (30 prebuilt voices) are applied;
+  `max_output_tokens`, `stop`, penalties, `safety`, `search`, `thinking` are dropped into
+  `result.notes`. `json_mode`/`json_schema` raise `RequestError`, so a chain moves on.
+- With `audio=True`, `stream()` also yields `{'type': 'delta', 'audio': PCM, 'sample_rate': 24000}`.
+- `timeout_s` is the longest silence between two messages, not the length of the answer.
+- `*-live-translate-*`, `*-transcribe-live` (audio only) and `*-extended-thinking` (does not
+  answer text) raise `RequestError`.
+
 ## Default model chain
 
 The shared chain is used when a call passes `chain=True` without a list.

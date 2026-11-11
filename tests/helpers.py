@@ -1,5 +1,7 @@
 """Isolated state dirs and fake SDK clients. Import before ai_router in every test module."""
 
+import asyncio
+import contextlib
 import os
 import shutil
 import tempfile
@@ -123,6 +125,60 @@ class FakeOpenAI:
     def _parse(self, **kwargs):
         self.calls.append(('parse', kwargs))
         return self._next()
+
+
+def live_error(code, reason):
+    """What google.genai raises when the Live API closes the websocket."""
+    return genai_errors.APIError(code, reason, None)
+
+
+def live_messages(*pieces, audio=b'', prompt_tokens=570):
+    """LiveServerMessages of one answer: a transcription chunk (and PCM) per piece, usage, turn_complete."""
+    messages = [types.LiveServerMessage(server_content=types.LiveServerContent(
+        output_transcription=types.Transcription(text=piece),
+        model_turn=types.Content(role='model', parts=[types.Part(inline_data=types.Blob(
+            data=audio, mime_type='audio/pcm;rate=24000'))]) if audio else None)) for piece in pieces]
+    messages.append(types.LiveServerMessage(usage_metadata=types.UsageMetadata(
+        prompt_token_count=prompt_tokens, response_token_count=40, total_token_count=prompt_tokens + 40)))
+    messages.append(types.LiveServerMessage(server_content=types.LiveServerContent(turn_complete=True)))
+    return messages
+
+
+HANG = object()
+
+
+class FakeLive:
+    """script: one entry per session — a list of LiveServerMessages (an exception in it is raised,
+    HANG waits forever) or an exception raised at connect. The last entry repeats."""
+
+    def __init__(self, script):
+        self.script, self.calls = list(script), []
+        self.aio = SimpleNamespace(live=SimpleNamespace(connect=self._connect))
+
+    @contextlib.asynccontextmanager
+    async def _connect(self, model, config):
+        item = self.script.pop(0) if len(self.script) > 1 else self.script[0]
+        call = {'model': model, 'config': config, 'turns': None, 'closed': False}
+        self.calls.append(call)
+        if isinstance(item, BaseException):
+            raise item
+
+        async def send_client_content(turns, turn_complete):
+            call['turns'], call['turn_complete'] = turns, turn_complete
+
+        async def receive():
+            for message in item:
+                if message is HANG:
+                    await asyncio.Event().wait()
+                if isinstance(message, BaseException):
+                    raise message
+                await asyncio.sleep(0)
+                yield message
+
+        try:
+            yield SimpleNamespace(send_client_content=send_client_content, receive=receive)
+        finally:
+            call['closed'] = True
 
 
 class Clients:

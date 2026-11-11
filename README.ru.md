@@ -123,6 +123,33 @@ ai.default_model("openai")                  # дефолты по провайд
 ai.light_model("gemini")                    # дешёвая модель того же провайдера для памяти
 ```
 
+## Live-модели
+
+`gemini-3.8-live`, `gemini-3.1-flash-live-preview` и `gemini-2.5-flash-native-audio-*`
+работают через Live API (websocket-сессия), но отвечают в `generate()`/`stream()` как обычные
+модели, в цепочке тоже. На бесплатном тарифе у них считается только TPM (65K у 3.8), без
+лимитов RPM/RPD.
+
+```python
+result = ai.generate("Привет!", model="gemini-3.8-live")
+for event in ai.stream("Расскажи сказку", model="gemini-3.8-live"):
+    ...
+speech = ai.generate("Привет!", model="gemini-3.8-live", audio=True, voice="Kore")
+speech.text, speech.save("answer.wav")                   # SpeechResult: текст и его озвучка
+ai.is_live_model("gemini-3.8-live")                       # True
+```
+
+- Live-модель всегда говорит; текст — расшифровка её речи и приходит со скоростью речи
+  (ответ на 300 слов идёт около 100 с). Код и JSON приходят текстом без озвучки.
+- Каждый вызов — одна сессия: вся переписка (с картинками) уходит одним ходом.
+- Применяются `system`, `temperature`, `top_p`, `top_k`, `seed`, `voice` (30 базовых голосов);
+  `max_output_tokens`, `stop`, штрафы, `safety`, `search`, `thinking` отбрасываются в
+  `result.notes`. `json_mode`/`json_schema` дают `RequestError` — цепочка идёт дальше.
+- С `audio=True` `stream()` отдаёт ещё `{'type': 'delta', 'audio': PCM, 'sample_rate': 24000}`.
+- `timeout_s` — самая долгая тишина между сообщениями, а не длина ответа.
+- `*-live-translate-*`, `*-transcribe-live` (только звук) и `*-extended-thinking` (не отвечает
+  на текст) дают `RequestError`.
+
 ## Цепочка моделей по умолчанию
 
 Общая цепочка применяется, когда вызов передал `chain=True` без списка.

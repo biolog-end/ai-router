@@ -371,7 +371,11 @@ class CatalogTests(unittest.TestCase):
         self.assertTrue(rows['gemini-3.8-flash']['free_tier'])
         self.assertFalse(rows['gemini-3.7-flash']['free_tier'])
         self.assertEqual(ai.model_info('gpt-5.4')['free_group'], 'large')
-        self.assertEqual(ai.light_model('openai'), 'gpt-5-mini')
+        self.assertEqual(ai.light_model('openai'), 'gpt-5.4-mini')
+
+    def test_default_chain_keeps_free_models_only(self):
+        for model in ai.DEFAULT_CHAIN:
+            self.assertTrue(ai.model_info(model)['free_tier'], model)
 
 
 if __name__ == '__main__':
